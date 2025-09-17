@@ -1,0 +1,204 @@
+@import "tailwindcss";
+
+
+.m-plus-rounded-1c-regular {
+  font-family: "M PLUS Rounded 1c", sans-serif;
+  font-weight: 400;
+  font-style: normal;
+}
+
+.chakra-petch-light {
+  font-family: "Chakra Petch", sans-serif;
+  font-weight: 300;
+  font-style: normal;
+}
+
+.chakra-petch-regular {
+  font-family: "Chakra Petch", sans-serif;
+  font-weight: 400;
+  font-style: normal;
+}
+
+.chakra-petch-medium {
+  font-family: "Chakra Petch", sans-serif;
+  font-weight: 500;
+  font-style: normal;
+}
+
+.chakra-petch-semibold {
+  font-family: "Chakra Petch", sans-serif;
+  font-weight: 600;
+  font-style: normal;
+}
+
+.chakra-petch-bold {
+  font-family: "Chakra Petch", sans-serif;
+  font-weight: 700;
+  font-style: normal;
+}
+
+.chakra-petch-light-italic {
+  font-family: "Chakra Petch", sans-serif;
+  font-weight: 300;
+  font-style: italic;
+}
+
+.chakra-petch-regular-italic {
+  font-family: "Chakra Petch", sans-serif;
+  font-weight: 400;
+  font-style: italic;
+}
+
+.chakra-petch-medium-italic {
+  font-family: "Chakra Petch", sans-serif;
+  font-weight: 500;
+  font-style: italic;
+}
+
+.chakra-petch-semibold-italic {
+  font-family: "Chakra Petch", sans-serif;
+  font-weight: 600;
+  font-style: italic;
+}
+
+.chakra-petch-bold-italic {
+  font-family: "Chakra Petch", sans-serif;
+  font-weight: 700;
+  font-style: italic;
+}
+
+
+/* ===== THEME TOKENS ===== */
+:root {
+  --bg: #0b0f13;                 /* default: "Midnight" theme */
+  --surface: #12161b;
+  --surface-2: #171c22;
+  --text: #e8eef6;
+  --muted: #98a4b3;
+  --accent: #7dd3fc;             /* sky */
+  --accent-2: #22d3ee;           /* cyan */
+  --ring: var(--accent);
+  --radius: 16px;
+  --shadow: 0 24px 80px -32px rgba(0,0,0,.55);
+}
+
+/* Theme: Transit (green, gov-friendly) */
+:root[data-theme="transit"]{
+  --bg:#ffffff; --surface:#ffffff; --surface-2:#f6f7f8;
+  --text:#0b0f13; --muted:#516173;
+  --accent:#0a7d55; --accent-2:#00a76f; --ring:#0a7d55;
+  --shadow: 0 20px 60px -30px rgba(0,0,0,.25);
+}
+
+/* Theme: Midnight (deep, modern) */
+:root[data-theme="midnight"]{
+  --bg:#0b0f13; --surface:#12161b; --surface-2:#171c22;
+  --text:#e8eef6; --muted:#98a4b3;
+  --accent:#7dd3fc; --accent-2:#22d3ee; --ring:#22d3ee;
+}
+
+/* Theme: Amber (warm, friendly) */
+:root[data-theme="amber"]{
+  --bg:#0b0f13; --surface:#101317; --surface-2:#151a21;
+  --text:#fef7e8; --muted:#c8ba9a;
+  --accent:#fbbf24; --accent-2:#f59e0b; --ring:#f59e0b;
+}
+
+/* App background */
+body {
+  color: var(--text);
+  background:
+    radial-gradient(1200px 800px at -10% -20%, color-mix(in oklab, var(--accent) 22%, transparent), transparent 60%),
+    radial-gradient(1000px 700px at 110% 0%, color-mix(in oklab, black 20%, transparent), transparent 55%),
+    var(--bg);
+}
+
+/* Utility tokens */
+.btn { 
+  display:inline-flex; align-items:center; gap:.5rem;
+  padding:.6rem 1rem; border-radius: calc(var(--radius) - 4px);
+  font-weight:600; letter-spacing:.2px;
+  box-shadow: 0 6px 18px -8px color-mix(in oklab, var(--accent) 40%, transparent);
+  transition: transform .15s ease, box-shadow .2s ease, background-color .2s ease;
+}
+.btn:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 60%, transparent); }
+.btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color:#0b0f13; }
+.btn-primary:hover { transform: translateY(-1px); }
+.btn-dark { background:#0b0f13; color:#fff; }
+.btn-ghost { background:transparent; color:var(--text); border:1px solid color-mix(in oklab, var(--text) 12%, transparent); }
+
+.card {
+  background: linear-gradient(180deg, color-mix(in oklab, var(--surface) 90%, transparent), var(--surface));
+  border:1px solid color-mix(in oklab, white 6%, transparent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+/* Glassy search */
+.glass {
+  background: color-mix(in oklab, var(--surface) 70%, transparent);
+  backdrop-filter: blur(10px);
+  border-radius: var(--radius);
+  border:1px solid color-mix(in oklab, var(--text) 12%, transparent);
+  box-shadow: var(--shadow);
+}
+
+/* Headlines with gradient accent */
+.grad-text {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+
+/* micro-animations */
+@keyframes floaty { 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-6px) } }
+.floaty { animation: floaty 6s ease-in-out infinite; }
+
+/* respect reduced motion */
+@media (prefers-reduced-motion: reduce){
+  .floaty { animation: none; }
+  .btn { transition: none; }
+}
+
+/* ===== single light theme (no toggles) ===== */
+html, body { background:#ffffff; color:#0b0f13; }
+
+/* subtle page texture */
+body {
+  background:
+    radial-gradient(1200px 800px at -10% -20%, rgba(0,99,65,.06), transparent 60%),
+    radial-gradient(1000px 700px at 110% 0%, rgba(0,0,0,.04), transparent 55%),
+    #ffffff;
+}
+
+/* buttons */
+.btn{ display:inline-flex; align-items:center; gap:.5rem; padding:.6rem 1rem;
+  border-radius:14px; font-weight:600; letter-spacing:.2px;
+  transition: transform .15s ease, box-shadow .2s ease, background-color .2s ease;
+}
+.btn:focus-visible{ outline:none; box-shadow:0 0 0 3px rgba(0,99,65,.3); }
+.btn-primary{ background:#006341; color:#fff; }
+.btn-primary:hover{ background:#005637; transform:translateY(-1px); }
+.btn-dark{ background:#111; color:#fff; }
+.btn-dark:hover{ background:#222; transform:translateY(-1px); }
+
+/* cards / glass */
+.card{
+  background:#fff; border:1px solid #e6e7e9; border-radius:16px;
+  box-shadow:0 20px 60px -30px rgba(0,0,0,.18);
+}
+.glass{
+  background:#fffffff0; backdrop-filter: blur(10px);
+  border:1px solid #ededed; border-radius:18px;
+  box-shadow:0 20px 60px -30px rgba(0,0,0,.22);
+}
+
+/* accent text */
+.grad-text{
+  background: linear-gradient(90deg,#006341,#00a76f);
+  -webkit-background-clip: text; background-clip: text; color:transparent;
+}
+
+/* micro animation */
+@keyframes floaty { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+.animate-floaty{ animation: floaty 6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce){ .animate-floaty{ animation:none; } }
