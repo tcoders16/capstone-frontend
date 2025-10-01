@@ -26,6 +26,10 @@ export default function Home() {
       <Section bordered>
         <HowItWorks />
       </Section>
+    
+    
+    
+    
     </AppShell>
   );
 }

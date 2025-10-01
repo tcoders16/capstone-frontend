@@ -3,15 +3,16 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ImageDrop from "../../components/ImageDrop";
 import Button from "../../components/Button";
-import { startUpload, finalizeUpload, analyseItem } from "../../lib/api"; // + analyseItem
-import { fileToBase64 } from "../../lib/file";
+import { fileToBase64 } from "../../lib/file"; // <-- add this import
+//from api.ts
+import { uploadImageDirect, finalizeUpload, analyseItem } from "../../lib/api";
 
-/** Optional extracted fields you show on Review screen */
+/** Minimal fields shown on Review screen */
 type Extracted = {
   brand: string;
   model: string;
   color: string;
-  text: string; // free-form description / OCR-like text
+  text: string; // free-form or OCR-like text/summary
 };
 
 const GO_STATIONS = [
@@ -19,22 +20,25 @@ const GO_STATIONS = [
   "Burlington GO", "Bronte GO", "Milton GO", "Oshawa GO", "Scarborough",
 ];
 
-/** Real signed-URL PUT helper (used in prod) */
-async function putToSignedUrl(url: string, file: File) {
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: { "Content-Type": file.type || "application/octet-stream" },
-    body: file,
-  });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => "");
-    throw new Error(`Signed upload failed: ${res.status} ${msg}`);
-  }
-}
+// /** PUT helper for real signed uploads (prod) */
+// async function putToSignedUrl(url: string, file: File) {
+//   const res = await fetch(url, {
+//     method: "PUT",
+//     headers: { "Content-Type": file.type || "application/octet-stream" },
+//     body: file,
+//   });
+//   if (!res.ok) throw new Error(`Signed upload failed: ${res.status} ${await res.text().catch(()=>"")}`);
+// }
 
-/** Detect our dev “fake” URL so we can bypass real upload */
-function isFakeSignedUrl(url: string) {
-  return /^https?:\/\/fake-upload\.local\//.test(url);
+// /** Detect our dev “fake” URL so we can bypass the PUT */
+// function isFakeSignedUrl(url: string) {
+//   return /^https?:\/\/fake-upload\.local\//.test(url);
+// }
+
+/** Ensure we pass raw base64 (no data: prefix) to backend when needed */
+async function toRawBase64(file: File) {
+  const s = await fileToBase64(file);          // your helper returns a string
+  return s.startsWith("data:") ? s.split(",")[1] : s;
 }
 
 export default function UploadItem() {
@@ -44,106 +48,96 @@ export default function UploadItem() {
   const [image, setImage] = useState<File | null>(null);
   const [location, setLocation] = useState("");
   const [desc, setDesc] = useState("");
-  const [touched, setTouched] = useState<{ image?: boolean; location?: boolean }>({});
 
   // ui state
+  const [touched, setTouched] = useState<{ image?: boolean; location?: boolean }>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // simple client-side validation
+  // validation
   const errors = useMemo(
     () => ({
       image: !image ? "Please upload a photo of the item." : "",
       location: !location.trim() ? "Enter the station or location where it was found." : "",
     }),
-    [image, location]
+    [image, location],
   );
   const isValid = !errors.image && !errors.location;
 
   /**
-   * Primary action:
-   * 1) ask backend for itemId + signed URL
-   * 2) if real URL: PUT file → finalize
-   *    if fake URL (dev): skip PUT, still finalize
-   * 3) call /api/items/analyse (base64 in dev; URL in prod if you have one)
-   * 4) navigate to Review with the analysis result
+   * Flow:
+   * 1) /upload/start -> itemId + (fake|real) signed URL
+   * 2) If real: PUT file; if fake (dev): skip
+   * 3) /upload/finalize -> create initial DB record
+   * 4) /analyse -> ask backend to analyse (base64 in dev; url in prod if you have one)
+   * 5) Navigate to Review with the extracted info
    */
-  async function handleExtract() {
-    setTouched({ image: true, location: true });
-    setError(null);
-    if (!isValid || !image) return;
+async function handleExtract() {
+  setTouched({ image: true, location: true });
+  setError(null);
+  if (!isValid || !image) return;
 
-    try {
-      setSubmitting(true);
+  try {
+    setSubmitting(true);
 
-      // 1) Ask backend for signed URL + itemId (works for both dev and prod)
-      const start = await startUpload(image.type || "image/jpeg"); // { itemId, uploadUrl, storagePath }
+    // 1) direct upload to your backend (which uploads to S3)
+    //    optionally pass a folder like "items" etc.
+    const up = await uploadImageDirect(image, {
+      fileId: `tmp-${Date.now()}`, // or generate server-side; either is fine
+      // folder: "items",          // uncomment if your route supports it
+    });
+    // up.key is your storagePath; up.signedUrl may be present
 
-      // 2) Upload if URL is real; skip in dev
-      const devMock = isFakeSignedUrl(start.uploadUrl);
-      if (!devMock) {
-        await putToSignedUrl(start.uploadUrl, image);
-      }
+    // 2) finalize initial record in your DB
+    await finalizeUpload({
+      itemId: up.key,                 // or a real itemId if your backend returns one
+      storagePath: up.key,            // <- persist this
+      locationName: location.trim(),
+      description: desc.trim().slice(0, 240),
+    });
 
-      // 3) Finalize: create the initial DB record (status=found)
-      await finalizeUpload({
-        itemId: start.itemId,
-        storagePath: start.storagePath,
-        locationName: location.trim(),
-        description: desc.trim().slice(0, 240),
-        // foundAt: new Date().toISOString(), // optional
-      });
+    // 3) analyse
+    // Prefer sending the key so backend can fetch with a server-side signed GET.
+    const res = await analyseItem({
+      itemId: up.key,                 // or a separate itemId if you have it
+      imageUrl: up.signedUrl!,  // matches existing type
+      detail: "high",
+    });
 
-      // 4) Analyse the image
-      //    - In dev (no real upload), send base64
-      //    - In prod (real upload), you can pass a public URL if you generate one
-      let analysisText = "";
-      if (devMock) {
-        const base64 = await fileToBase64(image);
-        const analysed = await analyseItem({
-          itemId: start.itemId,
-          imageBase64: base64,
-          detail: "auto",
-          prompt:
-            "Describe this lost item. Include likely brand/model if visible, color, and notable features.",
-        });
-        analysisText = analysed.description;
-      } else {
-        // If you expose a public image URL after upload, pass it here instead of base64:
-        // const analysed = await analyseItem({ itemId: start.itemId, imageUrl: publicUrl, detail: "high" });
-        // analysisText = analysed.description;
-      }
+    const analysisText =
+      (res as any).description ??
+      (res as any).attributes?.summary ??
+      "";
 
-      // 5) Prepare a minimal extracted object for the review screen
-      const extracted: Extracted = {
-        brand: "",
-        model: "",
-        color: "",
-        text: analysisText || "Analysis complete.",
-      };
+    const extracted: Extracted = {
+      brand: "",
+      model: "",
+      color: "",
+      text: analysisText || "Analysis complete.",
+    };
 
-      // 6) Go to review with everything needed
-      nav("/admin/review", {
-        state: {
-          image,
-          location: location.trim(),
-          desc: desc.trim(),
-          extracted,
-          itemId: start.itemId,
-          storagePath: start.storagePath,
-        },
-      });
-    } catch (e: any) {
-      console.error(e);
-      setError(e?.message || "Upload/analysis failed. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
+    // 4) go to review
+    nav("/admin/review", {
+      state: {
+        image,
+        location: location.trim(),
+        desc: desc.trim(),
+        extracted,
+        itemId: up.key,       // carry forward what you persisted
+        storagePath: up.key,
+      },
+    });
+  } catch (e: any) {
+    console.error(e);
+    setError(e?.message || "Upload/analysis failed. Please try again.");
+  } finally {
+    setSubmitting(false);
   }
+}
 
   return (
     <main className="max-w-3xl mx-auto px-4 py-8">
-      {/* Step header */}
+      {/* Header */}
       <div className="mb-6">
         <div className="text-xs uppercase tracking-wide text-neutral-600">Intake</div>
         <h1 className="text-2xl font-semibold leading-tight">Upload Lost Item</h1>
@@ -170,7 +164,6 @@ export default function UploadItem() {
             <p className="mt-2 text-xs text-red-600">{errors.image}</p>
           ) : null}
 
-          {/* Inline preview */}
           {image ? (
             <div className="mt-3 flex items-center gap-3">
               <img

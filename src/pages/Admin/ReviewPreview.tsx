@@ -3,8 +3,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Button from "../../components/Button";
 import { fileToBase64 } from "../../lib/file";
-import { analyseImageFromUpload } from "../../lib/api";
+import { analyseImageFromUpload, saveAnalysedItemToMongo } from "../../lib/api";
 
+/** Shape of attributes returned by analysis */
 type Attributes = {
   category?: string;
   brand?: string;
@@ -23,6 +24,11 @@ type Attributes = {
   confidence?: number;
 };
 
+
+
+
+
+/** Little UI chip */
 function Chip({ children }: { children: React.ReactNode }) {
   return (
     <span className="inline-flex items-center rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-xs text-neutral-700">
@@ -31,6 +37,7 @@ function Chip({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Skeleton placeholder while loading */
 function SkeletonRow() {
   return (
     <div className="animate-pulse space-y-2">
@@ -40,18 +47,26 @@ function SkeletonRow() {
   );
 }
 
+/** Helper: strip "data:*;base64," prefix if present */
+function toRawBase64(s: string) {
+  return s.startsWith("data:") ? s.split(",")[1] : s;
+}
+
 export default function ReviewPreview() {
   const nav = useNavigate();
+
+  // This page expects to be navigated to with state from UploadItem.tsx
   const { state } = useLocation() as {
     state?: {
       image: File;
       location: string;
       desc: string;
-      itemId: string;
-      storagePath: string;
+      itemId: string;      // your logical id (we pass this through to analysis & save)
+      storagePath: string; // (optional) S3 key if you carried it forward
     };
   };
 
+  // If someone hits this URL directly, guide them back
   if (!state) {
     return (
       <main className="mx-auto max-w-2xl p-8">
@@ -70,45 +85,81 @@ export default function ReviewPreview() {
 
   const { image, location, desc, itemId } = state;
 
+  // UI/analysis state
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [attrs, setAttrs] = useState<Attributes | null>(null);
 
+  // Local preview for the selected image
   const previewUrl = useMemo(() => URL.createObjectURL(image), [image]);
   useEffect(() => () => URL.revokeObjectURL(previewUrl), [previewUrl]);
 
+  // Run analysis once on mount (for this image/item)
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
       try {
         setErr(null);
         setLoading(true);
 
-        const base64 = await fileToBase64(image); // full data URL or raw as your helper returns
+        // fileToBase64 may give a data URL; backend often prefers the raw payload
+        const dataUrlOrRaw = await fileToBase64(image);
+        const raw = toRawBase64(dataUrlOrRaw);
+
         const res = await analyseImageFromUpload({
           itemId,
-          imageBase64: base64,
+          imageBase64: raw,
           detail: "auto",
         });
 
         if (cancelled) return;
+
+        // Prefer structured attributes; fall back to free-form description
         setAttrs(res.attributes || { summary: res.description ?? "" });
       } catch (e: any) {
-        if (cancelled) return;
-        setErr(e?.message || "Analysis failed");
+        if (!cancelled) setErr(e?.message || "Analysis failed");
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
+
     return () => {
       cancelled = true;
     };
   }, [image, itemId]);
 
-  function handleSubmit() {
-    console.log("Submitting to DB:", { itemId, location, desc, attributes: attrs });
-    alert("Item successfully stored in database!");
-    nav("/admin/dashboard");
+  /** Save the analysed payload into MongoDB via our API */
+  async function handleSubmit() {
+    // Do not allow saving before the analysis result is ready
+    if (!attrs) {
+      setErr("No attributes to save yet. Please wait for analysis to complete.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setErr(null);
+
+      // Send minimal, normalized payload expected by your backend
+      await saveAnalysedItemToMongo({
+        itemId,                  // either your logical id or S3 key
+        location: location.trim(),
+        desc: desc.trim(),
+        attributes: attrs,       // IMPORTANT: pass the VARIABLE, not the type
+        // image: { bucket, key, s3Uri } // include if you carried these forward
+      });
+
+      // Navigate only after a successful save
+      alert("Item successfully stored in database!");
+      nav("/admin/dashboard");
+    } catch (e: any) {
+      console.error(e);
+      setErr(e?.message || "Failed to save item to database");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -120,6 +171,11 @@ export default function ReviewPreview() {
         <p className="mt-1 text-sm text-neutral-600">
           Check the photo and the extracted details. You can go back to adjust anything.
         </p>
+        {err && (
+          <p className="mt-2 text-sm text-red-600">
+            {err}
+          </p>
+        )}
       </div>
 
       {/* Content grid */}
@@ -155,7 +211,7 @@ export default function ReviewPreview() {
             )}
           </div>
 
-          {/* Loading */}
+          {/* Loading state */}
           {loading && (
             <div className="mt-4 space-y-3">
               <SkeletonRow />
@@ -164,7 +220,7 @@ export default function ReviewPreview() {
             </div>
           )}
 
-          {/* Error */}
+          {/* Error box */}
           {err && !loading && (
             <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
               {err}
@@ -249,8 +305,8 @@ export default function ReviewPreview() {
             <Button variant="secondary" onClick={() => nav(-1)}>
               Back
             </Button>
-            <Button onClick={handleSubmit} disabled={loading || !!err}>
-              {loading ? "Analyzing…" : "Send to Database"}
+            <Button onClick={handleSubmit} disabled={loading || !!err || saving}>
+              {saving ? "Saving…" : loading ? "Analyzing…" : "Send to Database"}
             </Button>
           </div>
         </div>
